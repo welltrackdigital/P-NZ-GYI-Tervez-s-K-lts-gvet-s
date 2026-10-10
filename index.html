@@ -784,14 +784,15 @@ input[type=range]{height:10px;touch-action:pan-y}
 input[type=range]::-webkit-slider-thumb{width:24px;height:24px}
 .bill{flex-wrap:wrap;row-gap:10px}
 .bill .bi{min-width:150px;flex:1 1 150px}
-.bill .bi b{overflow-wrap:anywhere}
+.bill .bi b{overflow-wrap:break-word}
 .bill .bamt{white-space:nowrap}
 .bill .bact{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto}
 .envelope .erow2{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}
-.envelope .etop h4{min-width:0;overflow-wrap:anywhere}
+.envelope .etop h4{min-width:0;overflow-wrap:break-word}
 .goal .grow{align-items:flex-start}
 .goal .gtxt{flex:1;min-width:0}
-.goal h4{overflow-wrap:anywhere}
+.goal h4{overflow-wrap:break-word;hyphens:manual}
+.goal-grid{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)) !important}
 .mini-btns{display:flex;gap:6px;flex-shrink:0;margin-left:auto}
 .td-act{white-space:nowrap;text-align:right}
 .td-act .icon-btn+.icon-btn{margin-left:6px}
@@ -841,8 +842,15 @@ thead th[data-dir="-1"]::after{content:" \25BC";font-size:9px}
   .cal-head h3{font-size:15px;text-align:center}
 }
 @media(max-width:420px){ #yrPrev,#yrNext{font-size:0;gap:0;padding:9px 10px} }
+@media(max-width:520px){ .goal .grow{flex-wrap:wrap;row-gap:10px} .goal .gtxt{order:3;flex-basis:100%} }
 @media(max-width:360px){ .stats{grid-template-columns:1fr} .stat{flex-direction:row;align-items:center} }
 @media print{ .month-rail{display:none !important} }
+
+/* hero: real balance of the selected month */
+.hero-flow{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13px;font-weight:700}
+.hero-flow .fi{color:#BFF0D0}
+.hero-flow .fo{color:#FFC9D2}
+.hero h2.neg{color:#FFC9D2 !important;-webkit-text-fill-color:#FFC9D2 !important}
 </style>
 </head>
 <body>
@@ -906,6 +914,7 @@ thead th[data-dir="-1"]::after{content:" \25BC";font-size:9px}
           <div class="hero-left">
             <div class="kicker" id="heroKicker">Fizetésáttekintés</div>
             <h2 class="num" id="heroAmount">—</h2>
+            <div class="hero-flow num" id="heroFlow"></div>
             <div class="hero-meta"><span class="cycle-chip"><span data-ic="refresh" data-sz="14"></span><span id="heroCycle">Kétheti fizetés</span></span></div>
             <div class="hero-cta">
               <button class="btn btn-light btn-sm" id="btnAddLogHero"><span data-ic="plus" data-sz="15"></span>Hozzáadás</button>
@@ -932,8 +941,8 @@ thead th[data-dir="-1"]::after{content:" \25BC";font-size:9px}
         </div>
         <div class="hero-alloc">
           <div class="hero-stat"><div class="hl"><span data-ic="bag" data-sz="14"></span>Szabadon elkölthető<b class="num" id="heroSafePct"></b></div><div class="hv num" id="heroSafe">—</div><div class="hs-sub num" id="heroSafeSub"></div><div class="mini"><div id="heroSafeBar"></div></div></div>
-          <div class="hero-stat"><div class="hl"><span data-ic="receipt" data-sz="14"></span>Számlák<b class="num" id="heroBillsPct"></b></div><div class="hv num" id="heroBills">—</div><div class="mini"><div id="heroBillsBar"></div></div></div>
-          <div class="hero-stat"><div class="hl"><span data-ic="piggy" data-sz="14"></span>Megtakarítás<b class="num" id="heroSavePct"></b></div><div class="hv num" id="heroSave">—</div><div class="mini"><div id="heroSaveBar"></div></div></div>
+          <div class="hero-stat"><div class="hl"><span data-ic="receipt" data-sz="14"></span>Számlák<b class="num" id="heroBillsPct"></b></div><div class="hv num" id="heroBills">—</div><div class="hs-sub num" id="heroBillsSub"></div><div class="mini"><div id="heroBillsBar"></div></div></div>
+          <div class="hero-stat"><div class="hl"><span data-ic="piggy" data-sz="14"></span>Megtakarítás<b class="num" id="heroSavePct"></b></div><div class="hv num" id="heroSave">—</div><div class="hs-sub num" id="heroSaveSub"></div><div class="mini"><div id="heroSaveBar"></div></div></div>
         </div>
       </div>
 
@@ -1578,8 +1587,9 @@ function setGauge(id, valId, pct){
   el.style.strokeDashoffset = CIRC * (1 - Math.min(100,Math.max(0,pct))/100);
   $(valId).textContent = Math.round(pct) + "%";
 }
+function monthIncome(){ const mk = curMK(); return state.transactions.filter(t=>t.type==="bevétel" && String(t.date||"").slice(0,7)===mk).reduce((a,t)=>a+(Number(t.amount)||0),0); }
 function splitCalc(){
-  const p = state.paycheck, A = Number(p.amount)||0;
+  const p = state.paycheck, A = (Number(p.amount)||0) || monthIncome();
   const spend = Math.max(0, 100 - p.pctBills - p.pctSave);
   const safe = A*spend/100, spent = spentThisCycle();
   return { A, spend, spent,
@@ -1591,11 +1601,12 @@ function splitCalc(){
 function cycleRange(){
   const p2 = n => String(n).padStart(2,"0");
   const key = d => d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());
-  const now = new Date(); now.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const now = monthKey(today) === curMK() ? today : new Date(calCursor.getFullYear(), calCursor.getMonth()+1, 0);
   const d = new Date(now), c = state.paycheck.cycle;
   if(c === "weekly") d.setDate(d.getDate() - 6);
   else if(c === "biweekly") d.setDate(d.getDate() - 13);
-  else d.setDate(1);
+  else { d.setDate(1); return { from: key(d), to: key(new Date(d.getFullYear(), d.getMonth()+1, 0)) }; }
   return { from: key(d), to: key(now) };
 }
 function spentThisCycle(){
@@ -1612,16 +1623,28 @@ function renderSplitter(){
   $("pctSave").value = p.pctSave;   $("outSave").textContent = p.pctSave + "%";
   $("pctSpend").value = s.spend;    $("outSpend").textContent = s.spend + "%";
   /* hero */
-  countUp($("heroAmount"), s.A, v => fmt(v));
-  $("heroCycle").textContent = CYCLE_LABEL[p.cycle] + " fizetés";
+  const _mk = curMK(), _ml = monthLabel(), _mtx = state.transactions.filter(t=>String(t.date||"").slice(0,7)===_mk);
+  const _inc = _mtx.filter(t=>t.type==="bevétel").reduce((a,t)=>a+(Number(t.amount)||0),0);
+  const _exp = _mtx.filter(t=>t.type!=="bevétel").reduce((a,t)=>a+(Number(t.amount)||0),0);
+  const _bal = Math.round((_inc-_exp)*100)/100;
+  countUp($("heroAmount"), _bal, v => fmt(v));
+  $("heroAmount").classList.toggle("neg", _bal < 0);
+  if($("heroFlow")) $("heroFlow").innerHTML = '<span class="fi">+' + fmt(_inc) + ' bevétel</span><span class="fo">−' + fmt(_exp) + ' kiadás</span>';
+  
+  $("heroCycle").textContent = CYCLE_LABEL[p.cycle] + " fizetés" + (Number(p.amount) > 0 ? ": " + fmt(p.amount) : "");
   try{
     const _h = new Date().getHours();
     const _k = _h>=5&&_h<10 ? "Jó reggelt" : _h>=10&&_h<18 ? "Jó napot" : _h>=18&&_h<22 ? "Jó estét" : "Jó éjszakát";
     const _n = (state.profile && state.profile.name) ? ", "+state.profile.name : "";
-    const _hk = $("heroKicker"); if(_hk) _hk.textContent = _k+_n+" · Fizetésáttekintés";
+    const _hk = $("heroKicker"); if(_hk) _hk.textContent = _k+_n+" · " + monthLabel() + " egyenlege";
   }catch(e){}
   $("heroSafe").textContent = fmt(s.safeLeft);  $("heroBills").textContent = fmt(s.bills);  $("heroSave").textContent = fmt(s.save);
   $("heroSafeSub").textContent = fmt(s.spent) + " elköltve a " + fmt(s.safe) + " tervezettből";
+  const _bTot = state.bills.reduce((a,b)=>a+(Number(b.amount)||0),0), _bPaid = state.bills.filter(b=>isPaid(b)).reduce((a,b)=>a+(Number(b.amount)||0),0);
+  $("heroBillsSub").textContent = state.bills.length ? fmt(_bPaid) + " / " + fmt(_bTot) + " kifizetve" : "Még nincs számla";
+  $("heroSaveSub").textContent = Math.round(s.pSave) + "% a fizetésedből";
+  const _w = x => Math.max(0, Math.min(100, x)) + "%";
+  requestAnimationFrame(()=>{ $("heroSafeBar").style.width = _w((s.safe > 0 ? s.spent/s.safe*100 : 0)); $("heroBillsBar").style.width = _w(_bTot > 0 ? _bPaid/_bTot*100 : 0); $("heroSaveBar").style.width = _w(s.A > 0 ? s.pSave : 0); });
   $("heroSafePct").textContent = Math.round(s.spend)+"%";
   $("heroBillsPct").textContent = Math.round(s.pBills)+"%";
   $("heroSavePct").textContent = Math.round(s.pSave)+"%";
@@ -1641,7 +1664,6 @@ function renderSplitter(){
   setGauge("gBills","gBillsVal",s.pBills); $("gBillsAmt").textContent = fmt(s.bills);
   setGauge("gSave","gSaveVal",s.pSave);  $("gSaveAmt").textContent = fmt(s.save);
   requestAnimationFrame(()=>{
-    $("heroSafeBar").style.width = s.spend+"%"; $("heroBillsBar").style.width = s.pBills+"%"; $("heroSaveBar").style.width = s.pSave+"%";
     $("barSafe").style.width = s.spend+"%";  $("barSafeAmt").textContent = fmt(s.safe);
     $("barBills").style.width = s.pBills+"%"; $("barBillsAmt").textContent = fmt(s.bills);
     $("barSave").style.width = s.pSave+"%";  $("barSaveAmt").textContent = fmt(s.save);
@@ -1685,7 +1707,7 @@ function renderStats(){
 /* ==================== BILLS ==================== */
 const ordinal = n => n + ".";
 function totalDue(){ return round2(state.bills.filter(b=>!isPaid(b)).reduce((s,b)=>s+Number(b.amount||0),0)); }
-function refreshBills(){ save(); renderBills(); renderCalendar(); renderStats(); }
+function refreshBills(){ save(); renderBills(); renderCalendar(); renderStats(); renderSplitter(); if(typeof renderDueNote==="function") renderDueNote(); }
 function toggleBill(id){
   const bill = state.bills.find(x=>x.id===id); if(!bill) return;
   const mk = curMK(), on = !isPaid(bill, mk);
@@ -1910,7 +1932,7 @@ function renderAnalytics(){
   const stats = [
     ["chart","Kiadás · "+mS,fmt(totE),exp.length+" kiadás"],
     ["briefcase","Bevétel · "+mS,fmt(totI),inc.length+" bejegyzés"],
-    ["piggy","Megtakarítási ráta",savedRate.toFixed(1)+"%",totI?"bevétel megtartva":"nincs rögzített bevétel"],
+    ["piggy","Megtakarítási ráta",savedRate.toLocaleString("hu-HU",{minimumFractionDigits:1,maximumFractionDigits:1})+"%",totI?"bevétel megtartva":"nincs rögzített bevétel"],
     ["sparkles","Legnagyobb kategória",topCatName(exp),topCatAmt(exp)]
   ];
   $("statRow2").innerHTML = stats.map(c=>`
